@@ -155,5 +155,44 @@ def get_assembly_components(
     return db.get_assembly_components(product_id=product_id, drawing_number=drawing_number)
 
 
+_embedding_model = None
+
+def _get_model():
+    global _embedding_model
+    if _embedding_model is None:
+        try:
+            from sentence_transformers import SentenceTransformer
+            _embedding_model = SentenceTransformer("paraphrase-multilingual-MiniLM-L12-v2")
+        except ImportError:
+            return None
+    return _embedding_model
+
+
+@mcp.tool()
+def semantic_search(query: str, top_k: int = 10) -> list:
+    """Find products by meaning rather than exact keywords (semantic / vector search).
+
+    Use this when keyword search returns nothing, or when the customer describes
+    what they want without using exact product terms.
+
+    Examples:
+      "noe å løfte tønner med"     → finds fatbeslag / fatstropper
+      "krok for løft i trange rom" → finds lavtbyggende kryssåk
+      "festepunkt på dekk"         → finds løftepunkt / øyebolter
+
+    Args:
+        query: Natural language description of what the customer needs (Norwegian or English)
+        top_k: Number of results to return (default 10)
+
+    Returns products ranked by semantic similarity with a similarity_score (0–1).
+    """
+    db.init_db()
+    model = _get_model()
+    if model is None:
+        return [{"error": "sentence-transformers not installed. Run: py -m pip install sentence-transformers"}]
+    vec = model.encode(query).tolist()
+    return db.semantic_search(vec, top_k=top_k)
+
+
 if __name__ == "__main__":
     mcp.run()

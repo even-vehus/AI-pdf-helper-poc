@@ -1,0 +1,32 @@
+# Generated database and embeddings — re-created by running extract.py / embed.py
+data/
+
+# Proprietary customer PDFs — not for version control
+Nosted_data/
+
+# API keys
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# HuggingFace model cache (large, downloaded automatically)
+.cache/
+
+# Editor
+.vscode/
+*.swp
+*.swo
+
+# Claude Code local settings
+.claude/settings.local.json

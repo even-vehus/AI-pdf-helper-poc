@@ -288,6 +288,73 @@ def list_categories() -> list[dict]:
         ]
 
 
+def init_embeddings_table():
+    with get_conn() as conn:
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS embeddings (
+                product_id INTEGER PRIMARY KEY REFERENCES products(id),
+                embedding BLOB NOT NULL
+            );
+        """)
+
+
+def upsert_embedding(product_id: int, vector: list[float]):
+    import struct
+    blob = struct.pack(f"{len(vector)}f", *vector)
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO embeddings (product_id, embedding) VALUES (?, ?)",
+            (product_id, blob),
+        )
+
+
+def get_all_embeddings() -> list[tuple[int, list[float]]]:
+    import struct
+    with get_conn() as conn:
+        rows = conn.execute("SELECT product_id, embedding FROM embeddings").fetchall()
+    result = []
+    for pid, blob in rows:
+        n = len(blob) // 4
+        vec = list(struct.unpack(f"{n}f", blob))
+        result.append((pid, vec))
+    return result
+
+
+def semantic_search(query_vec: list[float], top_k: int = 10) -> list[dict]:
+    import math
+
+    def cosine(a: list[float], b: list[float]) -> float:
+        dot = sum(x * y for x, y in zip(a, b))
+        na = math.sqrt(sum(x * x for x in a))
+        nb = math.sqrt(sum(x * x for x in b))
+        return dot / (na * nb) if na and nb else 0.0
+
+    rows = get_all_embeddings()
+    if not rows:
+        return []
+
+    scored = sorted(
+        [(pid, cosine(query_vec, vec)) for pid, vec in rows],
+        key=lambda x: x[1],
+        reverse=True,
+    )[:top_k]
+
+    with get_conn() as conn:
+        results = []
+        for pid, score in scored:
+            row = conn.execute(
+                "SELECT id, product_name, product_name_en, item_number, drawing_number,"
+                " category, wll_tonnes, weight_kg, source_type, manufacturer, status"
+                " FROM products WHERE id=?",
+                (pid,),
+            ).fetchone()
+            if row:
+                d = dict(row)
+                d["similarity_score"] = round(score, 4)
+                results.append(d)
+    return results
+
+
 def get_assembly_components(
     product_id: int = None, drawing_number: str = None
 ) -> list[dict]:
