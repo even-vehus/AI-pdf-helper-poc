@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \"import fitz; d=fitz.open\\('produktkatalogshort.pdf'\\); print\\('pages:', d.page_count\\)\")",
+      "Bash(pdfinfo produktkatalogshort.pdf)",
+      "Bash(python -c \"from pypdf import PdfReader; print\\('pages:', len\\(PdfReader\\('produktkatalogshort.pdf'\\).pages\\)\\)\")",
+      "Bash(python3 -c \"from pypdf import PdfReader; print\\('pages:', len\\(PdfReader\\('produktkatalogshort.pdf'\\).pages\\)\\)\")",
+      "Bash(powershell -Command \"\\(Get-Content produktkatalogshort.pdf -Raw -Encoding Byte | Out-Null\\)\")",
+      "Bash(pip --version)",
+      "Bash(python -c \"import fitz; print\\('pymupdf ok'\\)\")",
+      "PowerShell($cmds = 'python','python3','py','pdftoppm','pdfinfo'; foreach\\($c in $cmds\\){ $g = Get-Command $c -ErrorAction SilentlyContinue; if\\($g\\){ \"$c -> $\\($g.Source\\)\" } else { \"$c -> NOT FOUND\" } })",
+      "PowerShell(py --version)",
+      "PowerShell(py -c \"import sys; print\\(sys.executable\\)\")"
+    ]
+  }
+}

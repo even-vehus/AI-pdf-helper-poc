@@ -1,0 +1,74 @@
+You are extracting product metadata from Nøsted & / FRAM / Kjættingfabriken product documents.
+These include technical drawings, assembly drawings with bill-of-materials tables, and product catalog pages.
+
+Extract ALL distinct products visible in the provided document pages and return a valid JSON array.
+One PDF may contain multiple products on different pages — return one object per product.
+
+Each product object must follow this exact schema (all fields required, use null for unknown values):
+
+{
+  "source_file": "<filename passed at top of message>",
+  "source_page": <1-indexed page number where this product primarily appears>,
+  "source_type": "<fram_drawing|assembly|third_party|catalog_row>",
+  "product_name": "<Norwegian product name>",
+  "product_name_en": "<English name, or null>",
+  "item_number": "<T-number e.g. T63458251, or null>",
+  "drawing_number": "<drawing number e.g. 634-58251 or 124-0047, or null>",
+  "vendor_part_number": "<third-party art.no e.g. N53156300, or null>",
+  "category": "<exactly one category from the list below>",
+  "wll_tonnes": <WLL in tonnes as float — if given in kg divide by 1000, or null>,
+  "proof_force_kn": <proof/test force in kN as float, or null>,
+  "min_break_force_kn": <minimum breaking force in kN as float, or null>,
+  "weight_kg": <weight in kg as float, or null>,
+  "standard": "<main standard or directive e.g. Maskin Direktiv 2006/42/EC, or null>",
+  "certification": "<e.g. Løftesertifikat Form 4, or null>",
+  "surface_treatment": "<e.g. Lakkert med farge RAL 1004, or null>",
+  "material": "<e.g. SAE 6620, Grade 8, S355 J2, or null>",
+  "designed_for": "<intended use or application, or null>",
+  "date": "<ISO date YYYY-MM-DD from drawing title block, or null>",
+  "revision": "<revision code e.g. GB or B0, or null>",
+  "status": "<released|draft — use draft only if a DRAFT stamp is visible on the drawing>",
+  "manufacturer": "<manufacturer name e.g. FRAM, Kjættingfabriken AS, Tigrip, or null>",
+  "related_standards": ["<e.g. NS-EN 818-2>"],
+  "dimensions": {
+    "length_mm": <overall length in mm or null>,
+    "width_mm": <overall width in mm or null>,
+    "height_mm": <overall height in mm or null>
+  },
+  "extra_dimensions": [
+    {"key": "<dim label e.g. D, L, B, R, diameter, working_width>", "value_mm": <float>, "description": "<optional note>"}
+  ],
+  "components": [
+    {
+      "part_number": "<varenr / part no>",
+      "description": "<component description>",
+      "qty": <integer count>,
+      "length_mm": <chain/wire length in mm or null>,
+      "grade": "<grade string e.g. 8 or null>"
+    }
+  ],
+  "tags": ["<lowercase keyword>"],
+  "full_description": "<1-2 sentence natural language description for full-text keyword search>"
+}
+
+source_type values:
+- "fram_drawing"  — FRAM / Kjættingfabriken single-component technical drawing
+- "assembly"      — assembly drawing with a bill-of-materials (stykkliste) table listing component parts
+- "third_party"   — product page from another brand (Tigrip, Crosby, etc.)
+- "catalog_row"   — single row extracted from a tabular catalog page
+
+Available categories (use exactly one, unchanged):
+Kjetting, Koplingselementer, Sjakler, Løkker, Kroker, Løftepunkt,
+Kjettingredskaper, Løfteåk, Surringsutstyr, Kabelarer, Mykløft,
+Ståltau, ROV-produkter, Havbruk, Grade 100, Rustfritt
+
+Extraction rules:
+- Return ONLY the JSON array — no prose, no markdown code fences
+- Always return an array, even for a single product
+- wll_tonnes: convert from kg if needed (e.g. 2000 kg capacity → 2.0)
+- components: for assembly drawings, extract EVERY row from the BOM/parts table including part_number, description, qty, and length if listed
+- Catalog pages with multiple product rows: return one object per row (each gets its own item_number / model etc.)
+- Third-party catalog pages: use vendor_part_number for the Art.-No., item_number is null
+- tags: include product type, material, capacity range, application — lowercase, Norwegian and/or English
+- If a field is not visible or not applicable, set it to null (never omit a field)
+- For multi-page drawings of the same product (e.g. page 1 of 2 / page 2 of 2), return ONE product object using the first page number; merge all information from all pages
