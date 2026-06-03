@@ -16,7 +16,7 @@ server.py  (FastMCP)
 db.py  (SQLite via sqlite3)
         │
         ▼
-New_data/superdatabase.db
+database/superdatabase.db
 ```
 
 ### Dataflyten
@@ -82,7 +82,7 @@ embeddings-tabell i superdatabase.db
 | `embed.py` | Generer og lagre sentence-embeddings for alle produkter |
 | `prompts/extraction.txt` | Prompt som styrer Claude-ekstraksjon fra PDF |
 | `requirements.txt` | Python-avhengigheter |
-| `New_data/superdatabase.db` | SQLite-databasen (ikke i git) |
+| `database/superdatabase.db` | SQLite-databasen (ikke i git) |
 | `Nosted_data/` | Kilde-PDF-er (ikke i git) |
 
 ---

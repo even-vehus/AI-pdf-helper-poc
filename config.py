@@ -6,7 +6,7 @@ load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent
 PDF_DIR = BASE_DIR / "Nosted_data"
-DB_PATH = BASE_DIR / "New_data" / "superdatabase.db"
+DB_PATH = BASE_DIR / "database" / "superdatabase.db"
 PROMPTS_DIR = BASE_DIR / "prompts"
 
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
