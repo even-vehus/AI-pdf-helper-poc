@@ -17,8 +17,9 @@ MODEL_NAME = "paraphrase-multilingual-MiniLM-L12-v2"
 
 def build_text(p: dict) -> str:
     parts = []
-    for field in ("product_name", "product_name_en", "category", "designed_for",
-                  "material", "standard", "manufacturer", "full_description"):
+    for field in ("product_name", "product_name_en", "item_number", "drawing_number",
+                  "category", "designed_for", "material", "standard", "manufacturer",
+                  "full_description"):
         v = p.get(field)
         if v:
             parts.append(str(v))

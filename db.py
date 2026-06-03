@@ -115,6 +115,163 @@ def init_db():
         """)
 
 
+def init_orders_table():
+    with get_conn() as conn:
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS orders (
+                id          INTEGER PRIMARY KEY,
+                item_number TEXT NOT NULL,
+                order_date  TEXT NOT NULL,
+                order_type  TEXT NOT NULL,
+                customer    TEXT,
+                qty         INTEGER,
+                unit_price  REAL,
+                order_total REAL
+            );
+            CREATE INDEX IF NOT EXISTS idx_orders_item ON orders(item_number);
+            CREATE INDEX IF NOT EXISTS idx_orders_date ON orders(order_date);
+            CREATE INDEX IF NOT EXISTS idx_orders_customer ON orders(customer);
+            CREATE INDEX IF NOT EXISTS idx_orders_type ON orders(order_type);
+        """)
+
+
+def insert_order(row: dict):
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO orders (item_number, order_date, order_type, customer, qty, unit_price, order_total)"
+            " VALUES (:item_number, :order_date, :order_type, :customer, :qty, :unit_price, :order_total)",
+            row,
+        )
+
+
+def clear_orders():
+    with get_conn() as conn:
+        conn.execute("DELETE FROM orders")
+
+
+def get_sales_summary(item_number: str, include_quotes: bool = False) -> dict:
+    types = ("'Quote'", "'Order'") if include_quotes else ("'Order'",)
+    type_filter = f"AND order_type IN ({', '.join(types)})"
+    with get_conn() as conn:
+        row = conn.execute(
+            f"""SELECT
+                COUNT(*) as transaction_count,
+                COALESCE(SUM(qty), 0) as total_units,
+                COALESCE(SUM(order_total), 0) as total_revenue,
+                COALESCE(AVG(unit_price), 0) as avg_unit_price,
+                MIN(order_date) as first_order,
+                MAX(order_date) as last_order
+            FROM orders
+            WHERE item_number = ? {type_filter}""",
+            (item_number,),
+        ).fetchone()
+        customers = conn.execute(
+            f"SELECT COUNT(DISTINCT customer) as n FROM orders WHERE item_number = ? {type_filter}",
+            (item_number,),
+        ).fetchone()
+    result = dict(row)
+    result["unique_customers"] = customers["n"]
+    result["item_number"] = item_number
+    result["includes_quotes"] = include_quotes
+    return result
+
+
+def get_customer_orders(
+    customer: str,
+    item_number: str = None,
+    from_date: str = None,
+    to_date: str = None,
+    include_quotes: bool = False,
+    limit: int = 50,
+) -> list[dict]:
+    types = ("'Quote'", "'Order'") if include_quotes else ("'Order'",)
+    conditions = [f"customer LIKE ?", f"order_type IN ({', '.join(types)})"]
+    params: list = [f"%{customer}%"]
+    if item_number:
+        conditions.append("item_number = ?")
+        params.append(item_number)
+    if from_date:
+        conditions.append("order_date >= ?")
+        params.append(from_date)
+    if to_date:
+        conditions.append("order_date <= ?")
+        params.append(to_date)
+    where = "WHERE " + " AND ".join(conditions)
+    params.append(limit)
+    with get_conn() as conn:
+        return [
+            dict(r)
+            for r in conn.execute(
+                f"SELECT item_number, order_date, order_type, customer, qty, unit_price, order_total"
+                f" FROM orders {where} ORDER BY order_date DESC LIMIT ?",
+                params,
+            ).fetchall()
+        ]
+
+
+def get_sales_trend(item_number: str, include_quotes: bool = False) -> list[dict]:
+    types = ("'Quote'", "'Order'") if include_quotes else ("'Order'",)
+    type_filter = f"AND order_type IN ({', '.join(types)})"
+    with get_conn() as conn:
+        return [
+            dict(r)
+            for r in conn.execute(
+                f"""SELECT
+                    SUBSTR(order_date, 1, 4) as year,
+                    SUM(qty) as total_units,
+                    SUM(order_total) as total_revenue,
+                    COUNT(*) as transaction_count,
+                    ROUND(AVG(unit_price), 0) as avg_unit_price
+                FROM orders
+                WHERE item_number = ? {type_filter}
+                GROUP BY year
+                ORDER BY year""",
+                (item_number,),
+            ).fetchall()
+        ]
+
+
+def search_order_history(
+    from_date: str = None,
+    to_date: str = None,
+    customer: str = None,
+    order_type: str = None,
+    limit: int = 20,
+) -> list[dict]:
+    conditions, params = [], []
+    if from_date:
+        conditions.append("order_date >= ?")
+        params.append(from_date)
+    if to_date:
+        conditions.append("order_date <= ?")
+        params.append(to_date)
+    if customer:
+        conditions.append("customer LIKE ?")
+        params.append(f"%{customer}%")
+    if order_type:
+        conditions.append("order_type = ?")
+        params.append(order_type)
+    where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+    params.append(limit)
+    with get_conn() as conn:
+        return [
+            dict(r)
+            for r in conn.execute(
+                f"""SELECT
+                    item_number,
+                    SUM(qty) as total_units,
+                    SUM(order_total) as total_revenue,
+                    COUNT(*) as transaction_count,
+                    COUNT(DISTINCT customer) as unique_customers
+                FROM orders {where}
+                GROUP BY item_number
+                ORDER BY total_units DESC
+                LIMIT ?""",
+                params,
+            ).fetchall()
+        ]
+
+
 def rebuild_fts_index():
     """Populate FTS index from existing products — run once after init_db on an existing DB."""
     with get_conn() as conn:
@@ -210,36 +367,39 @@ def search_products(
         conditions.append("p.wll_tonnes <= ?")
         params.append(max_wll)
 
-    where = ("AND " + " AND ".join(conditions)) if conditions else ""
-
-    if query:
-        # Terms with hyphens are phrase-searched exactly; plain terms use prefix match.
-        def _fts_term(t: str) -> str:
-            return f'"{t}"' if "-" in t else f'"{t}"*'
-        fts_query = " OR ".join(_fts_term(term) for term in query.split())
-        sql = f"""
-            SELECT p.id, p.product_name, p.product_name_en, p.item_number, p.drawing_number,
-                   p.category, p.wll_tonnes, p.weight_kg, p.source_type, p.manufacturer, p.status
-            FROM products_fts
-            JOIN products p ON p.id = products_fts.rowid
-            WHERE products_fts MATCH ? {where}
-            ORDER BY rank, p.wll_tonnes DESC
-            LIMIT ?
-        """
-        params = [fts_query] + params + [limit]
-    else:
-        where = ("WHERE " + " AND ".join(c.replace("p.", "") for c in conditions)) if conditions else ""
-        sql = f"""
-            SELECT id, product_name, product_name_en, item_number, drawing_number,
-                   category, wll_tonnes, weight_kg, source_type, manufacturer, status
-            FROM products {where}
-            ORDER BY wll_tonnes DESC
-            LIMIT ?
-        """
-        params.append(limit)
-
     with get_conn() as conn:
-        return [dict(r) for r in conn.execute(sql, params).fetchall()]
+        if query:
+            # Terms with hyphens are phrase-searched exactly; plain terms use prefix match.
+            def _fts_term(t: str) -> str:
+                return f'"{t}"' if "-" in t else f'"{t}"*'
+            terms = [_fts_term(t) for t in query.split()]
+            fts_where = ("AND " + " AND ".join(conditions)) if conditions else ""
+            fts_sql = f"""
+                SELECT p.id, p.product_name, p.product_name_en, p.item_number, p.drawing_number,
+                       p.category, p.wll_tonnes, p.weight_kg, p.source_type, p.manufacturer, p.status
+                FROM products_fts
+                JOIN products p ON p.id = products_fts.rowid
+                WHERE products_fts MATCH ? {fts_where}
+                ORDER BY rank, p.wll_tonnes DESC
+                LIMIT ?
+            """
+            # Prefer AND (all terms must match) — fall back to OR if no results.
+            and_params = [" AND ".join(terms)] + params + [limit]
+            rows = conn.execute(fts_sql, and_params).fetchall()
+            if not rows and len(terms) > 1:
+                or_params = [" OR ".join(terms)] + params + [limit]
+                rows = conn.execute(fts_sql, or_params).fetchall()
+            return [dict(r) for r in rows]
+        else:
+            plain_where = ("WHERE " + " AND ".join(c.replace("p.", "") for c in conditions)) if conditions else ""
+            sql = f"""
+                SELECT id, product_name, product_name_en, item_number, drawing_number,
+                       category, wll_tonnes, weight_kg, source_type, manufacturer, status
+                FROM products {plain_where}
+                ORDER BY wll_tonnes DESC
+                LIMIT ?
+            """
+            return [dict(r) for r in conn.execute(sql, params + [limit]).fetchall()]
 
 
 def get_product_details(
@@ -430,22 +590,22 @@ def get_similar_products(product_id: int, limit: int = 10) -> list[dict]:
             return []
         category, wll = base["category"], base["wll_tonnes"]
         conditions = ["id != ?"]
-        params: list = [product_id]
+        where_params: list = [product_id]
         if category:
             conditions.append("category = ?")
-            params.append(category)
+            where_params.append(category)
         if wll is not None:
             conditions.append("wll_tonnes BETWEEN ? AND ?")
-            params.extend([wll * 0.5, wll * 2.0])
+            where_params.extend([wll * 0.5, wll * 2.0])
         where = "WHERE " + " AND ".join(conditions)
-        params.append(limit)
+        order_param = wll if wll is not None else 0
         return [
             dict(r)
             for r in conn.execute(
                 f"SELECT id, product_name, item_number, drawing_number, category,"
                 f" wll_tonnes, weight_kg, manufacturer, status"
                 f" FROM products {where} ORDER BY ABS(wll_tonnes - ?) LIMIT ?",
-                params[:-1] + ([wll] if wll is not None else [0]) + [limit],
+                where_params + [order_param, limit],
             ).fetchall()
         ]
 

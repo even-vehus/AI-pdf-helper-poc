@@ -23,12 +23,14 @@ mcp = FastMCP("nosted-product-search")
 
 @mcp.tool()
 def search_products(
-    query: str,
+    query: str = None,
     category: str = None,
     min_wll: float = None,
     max_wll: float = None,
 ) -> list:
     """Search Nøsted & products by free text and optional filters.
+
+    All parameters are optional — you can filter by category or WLL alone without a query.
 
     Args:
         query: Text to search across name, item number, drawing number, description and tags.
@@ -282,6 +284,104 @@ def semantic_search(query: str, top_k: int = 10) -> list:
         return [{"error": "sentence-transformers not installed. Run: py -m pip install sentence-transformers"}]
     vec = model.encode(query).tolist()
     return db.semantic_search(vec, top_k=top_k)
+
+
+@mcp.tool()
+def get_sales_summary(
+    item_number: str,
+    include_quotes: bool = False,
+) -> dict:
+    """Get a sales summary for a product: total units sold, revenue, customers, date range.
+
+    Args:
+        item_number: The product item number (e.g. "T63458262")
+        include_quotes: If True, include Quote lines in addition to confirmed Orders.
+                        Default is False (confirmed Orders only).
+
+    Returns transaction_count, total_units, total_revenue (NOK), avg_unit_price,
+    first_order, last_order, unique_customers.
+    """
+    db.init_orders_table()
+    return db.get_sales_summary(item_number=item_number, include_quotes=include_quotes)
+
+
+@mcp.tool()
+def get_customer_orders(
+    customer: str,
+    item_number: str = None,
+    from_date: str = None,
+    to_date: str = None,
+    include_quotes: bool = False,
+) -> list:
+    """Get order history for a customer, optionally filtered by product or date range.
+
+    Use this to answer: "what has Fisk AS bought?", "how much has Olje AS spent on T63458262?"
+
+    Args:
+        customer: Customer name or partial name (e.g. "Fisk", "Olje AS")
+        item_number: Optional — limit to a specific product (e.g. "T537441")
+        from_date: Optional start date in ISO format (YYYY-MM-DD), e.g. "2024-01-01"
+        to_date: Optional end date in ISO format (YYYY-MM-DD), e.g. "2024-12-31"
+        include_quotes: Include Quote lines in addition to confirmed Orders (default False)
+
+    Returns order lines ordered by date descending, with qty, unit_price, order_total.
+    """
+    db.init_orders_table()
+    return db.get_customer_orders(
+        customer=customer,
+        item_number=item_number,
+        from_date=from_date,
+        to_date=to_date,
+        include_quotes=include_quotes,
+    )
+
+
+@mcp.tool()
+def get_sales_trend(
+    item_number: str,
+    include_quotes: bool = False,
+) -> list:
+    """Get yearly sales trend for a product — units, revenue, and average price per year.
+
+    Use this to answer: "is demand for T537441 growing?", "how has the price evolved?"
+
+    Args:
+        item_number: The product item number (e.g. "T63458262")
+        include_quotes: Include Quote lines in addition to confirmed Orders (default False)
+
+    Returns one row per year with total_units, total_revenue, transaction_count, avg_unit_price.
+    """
+    db.init_orders_table()
+    return db.get_sales_trend(item_number=item_number, include_quotes=include_quotes)
+
+
+@mcp.tool()
+def search_order_history(
+    from_date: str = None,
+    to_date: str = None,
+    customer: str = None,
+    order_type: str = None,
+) -> list:
+    """Summarise order history across all products, grouped by item number.
+
+    Use this to answer: "which products sold the most in 2024?", "who are our biggest buyers?"
+
+    Args:
+        from_date: Optional start date ISO format (YYYY-MM-DD), e.g. "2024-01-01"
+        to_date: Optional end date ISO format (YYYY-MM-DD), e.g. "2024-12-31"
+        customer: Optional customer name filter (partial match)
+        order_type: Optional — "Order" for confirmed orders only, "Quote" for quotes only.
+                    Omit to include both.
+
+    Returns products ranked by total units sold, with total_revenue and unique_customers.
+    """
+    db.init_orders_table()
+    return db.search_order_history(
+        from_date=from_date,
+        to_date=to_date,
+        customer=customer,
+        order_type=order_type,
+    )
 
 
 if __name__ == "__main__":

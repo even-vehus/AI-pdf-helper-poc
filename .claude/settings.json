@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(py -c \"import db; db.init_db\\(\\); db.init_orders_table\\(\\); import sqlite3; conn = sqlite3.connect\\('database/superdatabase.db'\\); print\\('orders rows:', conn.execute\\('SELECT COUNT\\(*\\) FROM orders'\\).fetchone\\(\\)[0]\\); print\\('products rows:', conn.execute\\('SELECT COUNT\\(*\\) FROM products'\\).fetchone\\(\\)[0]\\)\")",
+      "Bash(py -c ' *)"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\even.vehus\\.claude\\projects\\c--Users-even-vehus-Documents-Visual-Studio-Code-stuff-Nosted-poc\\memory"
+    ]
+  }
+}
