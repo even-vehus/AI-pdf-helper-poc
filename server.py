@@ -155,6 +155,57 @@ def get_assembly_components(
     return db.get_assembly_components(product_id=product_id, drawing_number=drawing_number)
 
 
+@mcp.tool()
+def search_by_drawing_prefix(prefix: str) -> list:
+    """Find all products whose drawing number starts with a given prefix.
+
+    Useful when you know the product series but not the exact drawing number.
+
+    Args:
+        prefix: Beginning of the drawing number, e.g. "634-" to find all 634-series products.
+
+    Returns up to 20 matching products with drawing_number, name, item_number, category, WLL.
+    """
+    db.init_db()
+    return db.search_by_drawing_prefix(prefix)
+
+
+@mcp.tool()
+def get_similar_products(product_id: int) -> list:
+    """Find products similar to a given product — same category and comparable WLL.
+
+    Use this when the customer asks "do you have something like this?" or when
+    the exact product is unavailable and you need alternatives.
+
+    Args:
+        product_id: Database id of the reference product (from search results).
+
+    Returns up to 10 products ordered by closest WLL match.
+    """
+    db.init_db()
+    return db.get_similar_products(product_id)
+
+
+@mcp.tool()
+def search_by_weight_range(
+    min_kg: float = None,
+    max_kg: float = None,
+) -> list:
+    """Find products within a weight range in kilograms.
+
+    Use when total rig weight is a constraint, e.g. the customer needs all
+    components under a certain weight budget.
+
+    Args:
+        min_kg: Minimum product weight in kg (optional)
+        max_kg: Maximum product weight in kg (optional)
+
+    Returns up to 20 matching products ordered by weight ascending.
+    """
+    db.init_db()
+    return db.search_by_weight_range(min_kg=min_kg, max_kg=max_kg)
+
+
 _embedding_model = None
 
 def _get_model():

@@ -8,7 +8,6 @@ Uses paraphrase-multilingual-MiniLM-L12-v2 — a 120 MB model that runs
 fully on-machine and handles Norwegian + English natively.
 """
 
-import sys
 from sentence_transformers import SentenceTransformer
 
 import db
@@ -17,7 +16,6 @@ MODEL_NAME = "paraphrase-multilingual-MiniLM-L12-v2"
 
 
 def build_text(p: dict) -> str:
-    """Construct a rich text blob to embed for a product."""
     parts = []
     for field in ("product_name", "product_name_en", "category", "designed_for",
                   "material", "standard", "manufacturer", "full_description"):
@@ -48,7 +46,7 @@ def main():
     product_ids = [r["id"] for r in rows]
 
     if not product_ids:
-        print("No products in DB. Run extract.py first.")
+        print("No products in DB.")
         return
 
     print(f"Loading model '{MODEL_NAME}'...")
