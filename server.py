@@ -156,6 +156,45 @@ def get_assembly_components(
 
 
 @mcp.tool()
+def search_by_standard(standard: str) -> list:
+    """Find all products certified to or designed for a given standard.
+
+    Use when the customer asks "what do you have that meets NS-EN 818?" or
+    when a project spec requires a specific standard.
+
+    Args:
+        standard: Standard name or code, e.g. "NS-EN 818", "offshore", "DNV"
+
+    Returns up to 20 matching products ordered by category and WLL.
+    """
+    db.init_db()
+    return db.search_by_standard(standard)
+
+
+@mcp.tool()
+def get_products_in_assembly(
+    part_drawing_number: str = None,
+    part_item_number: str = None,
+) -> list:
+    """Find which assemblies a given part or component is used in.
+
+    The reverse of get_assembly_components — answers "where is this part used?"
+    Useful for spare-parts lookup and impact analysis when a part changes.
+
+    Args:
+        part_drawing_number: Drawing number of the part (e.g. "634-58251")
+        part_item_number: Item number of the part (e.g. "T63458251")
+
+    Returns assemblies that include this part, with drawing_number, name, category, WLL.
+    """
+    db.init_db()
+    return db.get_products_in_assembly(
+        part_drawing_number=part_drawing_number,
+        part_item_number=part_item_number,
+    )
+
+
+@mcp.tool()
 def search_by_drawing_prefix(prefix: str) -> list:
     """Find all products whose drawing number starts with a given prefix.
 

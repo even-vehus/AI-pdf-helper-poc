@@ -416,6 +416,63 @@ def search_by_weight_range(
         ]
 
 
+def search_by_standard(standard: str, limit: int = 20) -> list[dict]:
+    with get_conn() as conn:
+        return [
+            dict(r)
+            for r in conn.execute(
+                "SELECT DISTINCT p.id, p.product_name, p.item_number, p.drawing_number,"
+                " p.category, p.wll_tonnes, p.weight_kg, p.manufacturer, p.status"
+                " FROM products p"
+                " LEFT JOIN product_standards ps ON ps.product_id = p.id"
+                " WHERE p.standard LIKE ? OR ps.standard_code LIKE ?"
+                " ORDER BY p.category, p.wll_tonnes LIMIT ?",
+                (f"%{standard}%", f"%{standard}%", limit),
+            ).fetchall()
+        ]
+
+
+def get_products_in_assembly(
+    part_drawing_number: str = None, part_item_number: str = None, limit: int = 20
+) -> list[dict]:
+    with get_conn() as conn:
+        if part_drawing_number:
+            part_row = conn.execute(
+                "SELECT id FROM products WHERE drawing_number=?", (part_drawing_number,)
+            ).fetchone()
+            part_id = part_row["id"] if part_row else None
+            assemblies = conn.execute(
+                "SELECT DISTINCT assembly_id FROM components"
+                " WHERE component_product_id=? OR part_number=?",
+                (part_id, part_drawing_number),
+            ).fetchall() if part_id else conn.execute(
+                "SELECT DISTINCT assembly_id FROM components WHERE part_number=?",
+                (part_drawing_number,),
+            ).fetchall()
+        elif part_item_number:
+            assemblies = conn.execute(
+                "SELECT DISTINCT assembly_id FROM components WHERE part_number=?",
+                (part_item_number,),
+            ).fetchall()
+        else:
+            return []
+
+        assembly_ids = [r["assembly_id"] for r in assemblies]
+        if not assembly_ids:
+            return []
+
+        placeholders = ",".join("?" * len(assembly_ids))
+        return [
+            dict(r)
+            for r in conn.execute(
+                f"SELECT id, product_name, item_number, drawing_number, category,"
+                f" wll_tonnes, weight_kg, manufacturer, status"
+                f" FROM products WHERE id IN ({placeholders}) LIMIT ?",
+                assembly_ids + [limit],
+            ).fetchall()
+        ]
+
+
 def get_assembly_components(
     product_id: int = None, drawing_number: str = None
 ) -> list[dict]:
