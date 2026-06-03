@@ -72,7 +72,53 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_product_name ON products(product_name);
             CREATE INDEX IF NOT EXISTS idx_comp_assembly ON components(assembly_id);
             CREATE INDEX IF NOT EXISTS idx_comp_part ON components(part_number);
+
+            CREATE VIRTUAL TABLE IF NOT EXISTS products_fts USING fts5(
+                product_name,
+                product_name_en,
+                item_number,
+                drawing_number,
+                full_description,
+                tags,
+                content=products,
+                content_rowid=id,
+                tokenize='unicode61'
+            );
+
+            CREATE TRIGGER IF NOT EXISTS products_fts_insert
+                AFTER INSERT ON products BEGIN
+                    INSERT INTO products_fts(rowid, product_name, product_name_en,
+                        item_number, drawing_number, full_description, tags)
+                    VALUES (new.id, new.product_name, new.product_name_en,
+                        new.item_number, new.drawing_number, new.full_description, new.tags);
+                END;
+
+            CREATE TRIGGER IF NOT EXISTS products_fts_update
+                AFTER UPDATE ON products BEGIN
+                    INSERT INTO products_fts(products_fts, rowid, product_name, product_name_en,
+                        item_number, drawing_number, full_description, tags)
+                    VALUES ('delete', old.id, old.product_name, old.product_name_en,
+                        old.item_number, old.drawing_number, old.full_description, old.tags);
+                    INSERT INTO products_fts(rowid, product_name, product_name_en,
+                        item_number, drawing_number, full_description, tags)
+                    VALUES (new.id, new.product_name, new.product_name_en,
+                        new.item_number, new.drawing_number, new.full_description, new.tags);
+                END;
+
+            CREATE TRIGGER IF NOT EXISTS products_fts_delete
+                AFTER DELETE ON products BEGIN
+                    INSERT INTO products_fts(products_fts, rowid, product_name, product_name_en,
+                        item_number, drawing_number, full_description, tags)
+                    VALUES ('delete', old.id, old.product_name, old.product_name_en,
+                        old.item_number, old.drawing_number, old.full_description, old.tags);
+                END;
         """)
+
+
+def rebuild_fts_index():
+    """Populate FTS index from existing products — run once after init_db on an existing DB."""
+    with get_conn() as conn:
+        conn.execute("INSERT INTO products_fts(products_fts) VALUES ('rebuild')")
 
 
 def insert_product(p: dict) -> int:
@@ -154,32 +200,44 @@ def search_products(
 ) -> list[dict]:
     conditions, params = [], []
 
-    if query:
-        conditions.append(
-            "(product_name LIKE ? OR product_name_en LIKE ? OR item_number LIKE ?"
-            " OR drawing_number LIKE ? OR full_description LIKE ? OR tags LIKE ?)"
-        )
-        q = f"%{query}%"
-        params.extend([q, q, q, q, q, q])
     if category:
-        conditions.append("category = ?")
+        conditions.append("p.category = ?")
         params.append(category)
     if min_wll is not None:
-        conditions.append("wll_tonnes >= ?")
+        conditions.append("p.wll_tonnes >= ?")
         params.append(min_wll)
     if max_wll is not None:
-        conditions.append("wll_tonnes <= ?")
+        conditions.append("p.wll_tonnes <= ?")
         params.append(max_wll)
 
-    where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
-    sql = f"""
-        SELECT id, product_name, product_name_en, item_number, drawing_number,
-               category, wll_tonnes, weight_kg, source_type, manufacturer, status
-        FROM products {where}
-        ORDER BY wll_tonnes DESC
-        LIMIT ?
-    """
-    params.append(limit)
+    where = ("AND " + " AND ".join(conditions)) if conditions else ""
+
+    if query:
+        # Terms with hyphens are phrase-searched exactly; plain terms use prefix match.
+        def _fts_term(t: str) -> str:
+            return f'"{t}"' if "-" in t else f'"{t}"*'
+        fts_query = " OR ".join(_fts_term(term) for term in query.split())
+        sql = f"""
+            SELECT p.id, p.product_name, p.product_name_en, p.item_number, p.drawing_number,
+                   p.category, p.wll_tonnes, p.weight_kg, p.source_type, p.manufacturer, p.status
+            FROM products_fts
+            JOIN products p ON p.id = products_fts.rowid
+            WHERE products_fts MATCH ? {where}
+            ORDER BY rank, p.wll_tonnes DESC
+            LIMIT ?
+        """
+        params = [fts_query] + params + [limit]
+    else:
+        where = ("WHERE " + " AND ".join(c.replace("p.", "") for c in conditions)) if conditions else ""
+        sql = f"""
+            SELECT id, product_name, product_name_en, item_number, drawing_number,
+                   category, wll_tonnes, weight_kg, source_type, manufacturer, status
+            FROM products {where}
+            ORDER BY wll_tonnes DESC
+            LIMIT ?
+        """
+        params.append(limit)
+
     with get_conn() as conn:
         return [dict(r) for r in conn.execute(sql, params).fetchall()]
 
