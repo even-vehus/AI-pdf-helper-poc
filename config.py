@@ -8,6 +8,8 @@ BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
 PDF_DIR = BASE_DIR / "Nosted_data"
 DB_PATH = DATA_DIR / "products.db"
+DRAWINGS_DB_PATH = DATA_DIR / "extracted_drawings.db"
+USE_CATALOG_DB = False
 PROMPTS_DIR = BASE_DIR / "prompts"
 
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
